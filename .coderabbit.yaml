@@ -1,0 +1,107 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+# =============================================================================
+# CodeRabbit config for the onyx monorepo (Vue 3 / Nuxt design system).
+# =============================================================================
+language: en-US
+
+tone_instructions: >-
+  Speak like a senior reviewer. Tie each finding to the exact line and explain the why and the
+  impact. No silent refactors, no emoji, no filler. You aid the human review, not replace it.
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  changed_files_summary: true
+  sequence_diagrams: true
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_labels: true
+  suggested_reviewers: true
+  poem: false
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+
+  path_filters:
+    - "!**/dist/**"
+    - "!**/node_modules/**"
+    - "!pnpm-lock.yaml"
+    - "!**/CHANGELOG.md"
+    - "!**/__snapshots__/**"
+    - "!**/playwright/snapshots/**"
+
+  path_instructions:
+    - path: "**/*.{spec,ct}.{ts,tsx}"
+      instructions: |
+        Tests encode intended behavior. A passing test that asserts the wrong result is a
+        defect, not evidence of correctness. Flag tests that lock in incorrect behavior or
+        that miss obvious edge cases of the change under test.
+    - path: "packages/sit-onyx/src/components/**"
+      instructions: |
+        Public design-system components. Flag breaking changes to props, emits, slots or
+        exported types, missing accessibility (ARIA roles, keyboard handling, focus management),
+        hardcoded user-facing strings that should go through i18n, and missing changesets.
+    - path: "**/{AGENTS.md,CLAUDE.md,.cursorrules,copilot-instructions.md}"
+      instructions: |
+        Agent-instruction files are a security-critical review surface. Flag changes that
+        expand agent authority, weaken guardrails, or could enable prompt injection or unsafe
+        command execution.
+    - path: ".github/workflows/**"
+      instructions: |
+        CI workflows. Flag overly broad permissions, unpinned third-party actions, and
+        untrusted input interpolated into run steps.
+
+  tools:
+    gitleaks:
+      enabled: true
+    eslint:
+      enabled: true
+    stylelint:
+      enabled: true
+    actionlint:
+      enabled: true
+
+  pre_merge_checks:
+    issue_assessment:
+      mode: warning
+    custom_checks:
+      - name: "Changeset"
+        mode: warning
+        instructions: >-
+          Warn when a PR changes the public behavior or API of a published package under
+          packages/** but does not add a file under .changeset/. Ignore docs-only, test-only,
+          and internal tooling changes.
+      - name: "Security gate"
+        mode: error
+        instructions: >-
+          Fail when the PR introduces a security vulnerability: XSS (e.g. `v-html` or `innerHTML`
+          with unsanitized data), regex or code injection from user input, hardcoded secrets,
+          unsafe `eval`/`new Function`, or unvalidated URLs in links and redirects. Pass only when
+          no such issue is present in the changed code.
+
+  finishing_touches:
+    docstrings:
+      enabled: true
+    unit_tests:
+      enabled: true
+
+knowledge_base:
+  opt_out: false
+  web_search:
+    enabled: true
+  learnings:
+    scope: auto
+  issues:
+    scope: auto
+  pull_requests:
+    scope: auto
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "CONTRIBUTING.md"
+      - "apps/docs/**/*.md"
