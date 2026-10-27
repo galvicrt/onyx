@@ -24,7 +24,7 @@ export const validateFileType = (
 
     // check match for extension, e.g. ".jpg" (also supports multi-part extensions like ".tar.gz")
     if (accept.startsWith(".")) {
-      return name.includes(accept);
+      return name.endsWith(accept);
     }
 
     // check match for media type range, e.g. "image/*"

@@ -9,7 +9,7 @@
   "
 >
 import { iconCloudArrowUp, iconTrash } from "@sit-onyx/icons";
-import { computed, ref, useTemplateRef, watch } from "vue";
+import { computed, ref, useId, useTemplateRef, watch } from "vue";
 import { useFileSize } from "../../composables/useFileSize.js";
 import { useFormElementError } from "../../composables/useFormElementError.js";
 import { SKELETON_INJECTED_SYMBOL } from "../../composables/useSkeletonState.js";
@@ -116,35 +116,100 @@ const error = computed(
 const hideFiles = ref(false);
 
 /**
+ * Files larger than this are not hashed for duplicate detection to keep memory usage low.
+ */
+const MAX_DUPLICATE_CHECK_SIZE = 50 * 1024 * 1024;
+
+/**
+ * Max. time in milliseconds to wait for a file import from `importUrl`.
+ */
+const IMPORT_TIMEOUT = 30_000;
+
+/**
  * Files whose content is identical to another selected file.
  */
 const duplicateFiles = ref(new Set<File>());
 
+/**
+ * Creates a SHA-256 hash of the file content so only the hash (and not the whole file) needs to be
+ * kept in memory.
+ */
+const hashFile = async (file: File) => {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+};
+
 watch(
   currentFiles,
-  async (files) => {
-    const duplicates = new Set<File>();
-    for (const a of files) {
-      for (const b of files) {
-        if (a === b) continue;
-        const [bufferA, bufferB] = await Promise.all([a.arrayBuffer(), b.arrayBuffer()]);
-        const textA = new TextDecoder().decode(bufferA);
-        const textB = new TextDecoder().decode(bufferB);
-        if (textA === textB) duplicates.add(a);
-      }
+  async (files, _, onCleanup) => {
+    let isStale = false;
+    onCleanup(() => (isStale = true));
+
+    // only files with the same size can have identical content
+    const filesBySize = new Map<number, File[]>();
+    files.forEach((file) => {
+      if (file.size > MAX_DUPLICATE_CHECK_SIZE) return;
+      if (props.maxSize && file.size > convertBinaryPrefixToBytes(props.maxSize)) return;
+      filesBySize.set(file.size, [...(filesBySize.get(file.size) ?? []), file]);
+    });
+    const candidates = [...filesBySize.values()].filter((group) => group.length > 1).flat();
+
+    // hashing requires a secure context, so duplicate detection is skipped otherwise
+    if (!candidates.length || !globalThis.crypto?.subtle) {
+      duplicateFiles.value = new Set();
+      return;
     }
-    duplicateFiles.value = duplicates;
+
+    // files are read one after another so only a single file is loaded into memory at a time
+    const filesByHash = new Map<string, File[]>();
+    for (const file of candidates) {
+      const hash = await hashFile(file);
+      if (isStale) return;
+      filesByHash.set(hash, [...(filesByHash.get(hash) ?? []), file]);
+    }
+
+    duplicateFiles.value = new Set(
+      [...filesByHash.values()].filter((group) => group.length > 1).flat(),
+    );
   },
-  { deep: true, immediate: true },
+  { immediate: true },
 );
 
 const formattedHint = computed(() => {
   if (!props.hint) return undefined;
   const lastFile = currentFiles.value.at(-1);
-  return props.hint.replace("{filename}", lastFile?.name ?? "");
+  return props.hint.replaceAll("{filename}", lastFile?.name ?? "");
 });
 
+const hintId = useId();
 const isImporting = ref(false);
+const importError = ref(false);
+
+const getFilenameFromUrl = (url: URL) => {
+  const filename = url.pathname.split("/").at(-1);
+  if (!filename) return "download";
+  try {
+    return decodeURIComponent(filename);
+  } catch {
+    return filename;
+  }
+};
+
+/**
+ * Reads the filename from a `Content-Disposition` header, e.g. `attachment; filename="report.pdf"`.
+ * Path segments are stripped since the header value is untrusted.
+ */
+const getFilenameFromHeader = (header: string | null) => {
+  const match = header?.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+  if (!match?.[1]) return undefined;
+  let filename = match[1];
+  try {
+    filename = decodeURIComponent(filename);
+  } catch {
+    // keep the raw value
+  }
+  return filename.split(/[\\/]/).at(-1)?.trim() || undefined;
+};
 
 /**
  * Downloads the file from the configured `importUrl` and adds it to the selection.
@@ -152,14 +217,36 @@ const isImporting = ref(false);
 const importFromUrl = async () => {
   if (!props.importUrl) return;
   isImporting.value = true;
-  const response = await fetch(props.importUrl, {
-    credentials: "include",
-    headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
-  });
-  const blob = await response.blob();
-  const filename = props.importUrl.split("/").at(-1) || "download";
-  setFiles([new File([blob], filename, { type: blob.type })]);
-  isImporting.value = false;
+  importError.value = false;
+
+  try {
+    const url = new URL(props.importUrl, window.location.href);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new Error(`Unsupported protocol "${url.protocol}"`);
+    }
+
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      // applies to both the request and reading the response body
+      signal: AbortSignal.timeout(IMPORT_TIMEOUT),
+    });
+    if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+
+    const blob = await response.blob();
+    // the component might have been disabled while the file was downloading
+    if (disabled.value) return;
+
+    // use the final URL so redirects (e.g. "/download" -> "/report.pdf") result in the correct filename
+    const filename =
+      getFilenameFromHeader(response.headers.get("Content-Disposition")) ??
+      getFilenameFromUrl(response.url ? new URL(response.url) : url);
+    setFiles([new File([blob], filename, { type: blob.type })]);
+  } catch (error) {
+    importError.value = true;
+    userConsole?.error("Error while importing file from URL", props.importUrl, error);
+  } finally {
+    isImporting.value = false;
+  }
 };
 
 const fileStatuses = computed((): (FileCardStatus | undefined)[] => {
@@ -171,9 +258,6 @@ const fileStatuses = computed((): (FileCardStatus | undefined)[] => {
         }),
         color: "danger",
       };
-    }
-    if (duplicateFiles.value.has(file)) {
-      return { text: "Duplicate file", color: "warning" };
     }
     if (props.maxSize && file.size > convertBinaryPrefixToBytes(props.maxSize)) {
       return {
@@ -192,11 +276,14 @@ const fileStatuses = computed((): (FileCardStatus | undefined)[] => {
         color: "danger",
       };
     }
-    if (props.multiple && props.maxCount && index > props.maxCount) {
+    if (props.multiple && props.maxCount && index >= props.maxCount) {
       return {
         text: t.value("fileUpload.status.maxCountError", { count: props.maxCount }),
         color: "danger",
       };
+    }
+    if (duplicateFiles.value.has(file)) {
+      return { text: t.value("fileUpload.status.duplicateWarning"), color: "warning" };
     }
   });
 });
@@ -308,6 +395,7 @@ const shouldShowFileList = computed(() => {
           @dragleave="isDragging = false"
           @dragover.prevent
           @drop.prevent="handleDrop"
+          :aria-describedby="formattedHint ? hintId : undefined"
           @click="input?.click()"
         >
           <OnyxFileUploadSVG
@@ -392,7 +480,7 @@ const shouldShowFileList = computed(() => {
         <OnyxSystemButton
           v-if="props.importUrl"
           class="onyx-file-upload__import-button"
-          label="Import from URL"
+          :label="t('fileUpload.importFromUrl')"
           :disabled="disabled || isImporting"
           @click="importFromUrl"
         />
@@ -428,11 +516,13 @@ const shouldShowFileList = computed(() => {
           </template>
         </div>
 
-        <p
-          v-if="formattedHint"
-          class="onyx-file-upload__text onyx-text--small"
-          v-html="formattedHint"
-        ></p>
+        <p v-if="importError" class="onyx-file-upload__text onyx-text--small" role="alert">
+          {{ t("fileUpload.importError") }}
+        </p>
+
+        <p v-if="formattedHint" :id="hintId" class="onyx-file-upload__text onyx-text--small">
+          {{ formattedHint }}
+        </p>
       </div>
     </template>
   </OnyxFormElementV2>
