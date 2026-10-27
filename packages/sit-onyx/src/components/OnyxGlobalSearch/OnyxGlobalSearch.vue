@@ -139,7 +139,7 @@ const getOptionProps = (value: string) => {
   };
 };
 
-provide(GLOBAL_SEARCH_INJECTION_KEY, { headless, activeValue });
+provide(GLOBAL_SEARCH_INJECTION_KEY, { headless, activeValue, searchTerm });
 </script>
 
 <template>

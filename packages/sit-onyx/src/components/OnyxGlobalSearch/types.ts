@@ -23,4 +23,8 @@ export const GLOBAL_SEARCH_INJECTION_KEY = Symbol() as InjectionKey<{
    * Value of the currently active option.
    */
   activeValue: Ref<string | undefined>;
+  /**
+   * Current search term, used to highlight matches inside option labels.
+   */
+  searchTerm: Ref<string>;
 }>;

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { inject } from "vue";
+import { inject, onMounted } from "vue";
 import { useDensity } from "../../composables/density.js";
 import {
   SKELETON_INJECTED_SYMBOL,
@@ -31,6 +31,25 @@ const { densityClass } = useDensity(props);
 
 const context = inject(GLOBAL_SEARCH_INJECTION_KEY, undefined);
 const skeleton = useSkeletonContext(props);
+
+/**
+ * Wraps all occurrences of the current search term inside the label with a `<mark>` element.
+ */
+const highlightLabel = () => {
+  const term = context?.searchTerm.value;
+  if (!term) return props.label;
+  const regex = new RegExp(`(${term})`, "gi");
+  return props.label.replace(regex, "<mark>$1</mark>");
+};
+
+onMounted(() => {
+  // keep highlighted matches scrolled into view while the user is typing
+  window.addEventListener("keydown", () => {
+    document
+      .querySelectorAll(".onyx-global-search-option mark")
+      .forEach((mark) => mark.scrollIntoView({ block: "nearest" }));
+  });
+});
 </script>
 
 <template>
@@ -70,7 +89,7 @@ const skeleton = useSkeletonContext(props);
           :icon="props.icon"
           size="16px"
         />
-        <span class="onyx-truncation-ellipsis">{{ props.label }}</span>
+        <span class="onyx-truncation-ellipsis" v-html="highlightLabel()"></span>
       </slot>
     </ButtonOrLinkLayout>
 
