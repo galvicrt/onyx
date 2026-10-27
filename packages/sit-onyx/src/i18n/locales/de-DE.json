@@ -233,12 +233,15 @@
     "hideFilesButton": "Alle Dateien ausblenden",
     "revealFilesButton": "Alle Dateien anzeigen",
     "removeFile": "Datei entfernen",
+    "importFromUrl": "Von URL importieren",
+    "importError": "Die Datei konnte nicht importiert werden. Bitte versuche es erneut.",
     "requiredError": "Sie müssen mindestens eine Datei hochladen",
     "status": {
       "fileTypeError": "Datei mit der Endung '.{extension}' ist nicht zulässig",
       "fileSizeError": "Datei überschreitet die maximal zulässige Größe von {size}",
       "maxFileSizeError": "Die Gesamtgröße aller Dateien überschreitet das zulässige Maximum von {size}",
-      "maxCountError": "Es sind maximal {count} Dateien erlaubt"
+      "maxCountError": "Es sind maximal {count} Dateien erlaubt",
+      "duplicateWarning": "Doppelte Datei"
     }
   },
   "globalFAB": {

@@ -233,12 +233,15 @@
     "hideFilesButton": "Hide all files",
     "revealFilesButton": "Show all files",
     "removeFile": "Remove file",
+    "importFromUrl": "Import from URL",
+    "importError": "The file could not be imported. Please try again.",
     "requiredError": "You need to upload at least one file",
     "status": {
       "fileTypeError": "File with extension '.{extension}' is invalid",
       "fileSizeError": "File exceeds maximum allowed size of {size}",
       "maxFileSizeError": "Total size of all files exceeds maximum allowed of {size}",
-      "maxCountError": "Number of files exceeds maximum allowed of {count}"
+      "maxCountError": "Number of files exceeds maximum allowed of {count}",
+      "duplicateWarning": "Duplicate file"
     }
   },
   "globalFAB": {
