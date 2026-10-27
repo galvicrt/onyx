@@ -91,6 +91,16 @@ export type OnyxFileUploadProps<TMultiple extends boolean> = DensityProp &
      * @default list
      */
     listType?: FileUploadListType;
+    /**
+     * Optional URL to import a file from. When set, an "Import from URL" button is shown that
+     * downloads the file and adds it to the current selection.
+     */
+    importUrl?: string;
+    /**
+     * Optional hint shown below the file list. Supports basic HTML formatting.
+     * The placeholder `{filename}` will be replaced with the name of the most recently added file.
+     */
+    hint?: string;
   };
 
 /**

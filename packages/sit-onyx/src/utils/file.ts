@@ -22,9 +22,9 @@ export const validateFileType = (
   return accept.some((_accept) => {
     const accept = _accept.trim().toLowerCase();
 
-    // check match for extension, e.g. ".jpg"
+    // check match for extension, e.g. ".jpg" (also supports multi-part extensions like ".tar.gz")
     if (accept.startsWith(".")) {
-      return name.endsWith(accept);
+      return name.includes(accept);
     }
 
     // check match for media type range, e.g. "image/*"

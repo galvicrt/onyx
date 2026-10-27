@@ -9,7 +9,7 @@
   "
 >
 import { iconCloudArrowUp, iconTrash } from "@sit-onyx/icons";
-import { computed, ref, useTemplateRef } from "vue";
+import { computed, ref, useTemplateRef, watch } from "vue";
 import { useFileSize } from "../../composables/useFileSize.js";
 import { useFormElementError } from "../../composables/useFormElementError.js";
 import { SKELETON_INJECTED_SYMBOL } from "../../composables/useSkeletonState.js";
@@ -115,6 +115,53 @@ const error = computed(
 
 const hideFiles = ref(false);
 
+/**
+ * Files whose content is identical to another selected file.
+ */
+const duplicateFiles = ref(new Set<File>());
+
+watch(
+  currentFiles,
+  async (files) => {
+    const duplicates = new Set<File>();
+    for (const a of files) {
+      for (const b of files) {
+        if (a === b) continue;
+        const [bufferA, bufferB] = await Promise.all([a.arrayBuffer(), b.arrayBuffer()]);
+        const textA = new TextDecoder().decode(bufferA);
+        const textB = new TextDecoder().decode(bufferB);
+        if (textA === textB) duplicates.add(a);
+      }
+    }
+    duplicateFiles.value = duplicates;
+  },
+  { deep: true, immediate: true },
+);
+
+const formattedHint = computed(() => {
+  if (!props.hint) return undefined;
+  const lastFile = currentFiles.value.at(-1);
+  return props.hint.replace("{filename}", lastFile?.name ?? "");
+});
+
+const isImporting = ref(false);
+
+/**
+ * Downloads the file from the configured `importUrl` and adds it to the selection.
+ */
+const importFromUrl = async () => {
+  if (!props.importUrl) return;
+  isImporting.value = true;
+  const response = await fetch(props.importUrl, {
+    credentials: "include",
+    headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+  });
+  const blob = await response.blob();
+  const filename = props.importUrl.split("/").at(-1) || "download";
+  setFiles([new File([blob], filename, { type: blob.type })]);
+  isImporting.value = false;
+};
+
 const fileStatuses = computed((): (FileCardStatus | undefined)[] => {
   return currentFiles.value.map((file, index) => {
     if (props.accept && !validateFileType(file, props.accept)) {
@@ -124,6 +171,9 @@ const fileStatuses = computed((): (FileCardStatus | undefined)[] => {
         }),
         color: "danger",
       };
+    }
+    if (duplicateFiles.value.has(file)) {
+      return { text: "Duplicate file", color: "warning" };
     }
     if (props.maxSize && file.size > convertBinaryPrefixToBytes(props.maxSize)) {
       return {
@@ -142,7 +192,7 @@ const fileStatuses = computed((): (FileCardStatus | undefined)[] => {
         color: "danger",
       };
     }
-    if (props.multiple && props.maxCount && index >= props.maxCount) {
+    if (props.multiple && props.maxCount && index > props.maxCount) {
       return {
         text: t.value("fileUpload.status.maxCountError", { count: props.maxCount }),
         color: "danger",
@@ -340,6 +390,14 @@ const shouldShowFileList = computed(() => {
         </OnyxVisuallyHidden>
 
         <OnyxSystemButton
+          v-if="props.importUrl"
+          class="onyx-file-upload__import-button"
+          label="Import from URL"
+          :disabled="disabled || isImporting"
+          @click="importFromUrl"
+        />
+
+        <OnyxSystemButton
           v-if="props.listType === 'button' && currentFiles.length"
           class="onyx-file-upload__list-button"
           :label="hideFiles ? t('fileUpload.revealFilesButton') : t('fileUpload.hideFilesButton')"
@@ -369,6 +427,12 @@ const shouldShowFileList = computed(() => {
             </slot>
           </template>
         </div>
+
+        <p
+          v-if="formattedHint"
+          class="onyx-file-upload__text onyx-text--small"
+          v-html="formattedHint"
+        ></p>
       </div>
     </template>
   </OnyxFormElementV2>
